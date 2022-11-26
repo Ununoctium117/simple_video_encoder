@@ -1,5 +1,5 @@
 [package]
-name = "framedump"
+name = "simple_video_encoder"
 version = "0.1.0"
 edition = "2021"
 

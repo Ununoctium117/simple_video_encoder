@@ -1,5 +1,8 @@
 //! Provides a simple and easy-to-use video encoder, which allows turning a series
-//! of images into a video without having to worry about the details.
+//! of images into a video using a simple interface with sane defaults.
+//!
+//! Videos produced will be compressed using H.264, and can be written to any
+//! container format supported by ffmpeg.
 
 #![deny(missing_docs, unconditional_panic)]
 
@@ -10,9 +13,11 @@ use std::{
 };
 
 use ffmpeg_sys_next::{av_make_error_string, AVCodecID, AVPixelFormat, AV_ERROR_MAX_STRING_SIZE};
-use frame::Frame;
 
-use crate::output::{OutputFormatContext, OutputStream};
+use crate::{
+    frame::Frame,
+    output::{OutputFormatContext, OutputStream},
+};
 
 mod frame;
 mod output;
@@ -40,7 +45,8 @@ fn make_av_error(action: impl Into<String>, err: i32) -> Box<dyn Error> {
 }
 
 /// The possible presets for libx264. These are listed in descending order of speed.
-/// See https://trac.ffmpeg.org/wiki/Encode/H.264 for more information.
+/// See <https://trac.ffmpeg.org/wiki/Encode/H.264> for more information.
+#[derive(Clone, Copy)]
 pub enum X264Preset {
     /// The fastest preset
     UltraFast,
@@ -78,17 +84,22 @@ impl X264Preset {
     }
 }
 
-/// Helper to build a SimpleVideoEncoder, allowing you to specify more options.
+#[derive(Default)]
+struct OptionalSettings {
+    crf: Option<i64>,
+    bitrate: Option<i64>,
+    gop_size: Option<i32>,
+    preset: Option<X264Preset>,
+}
+
+/// Helper to build a SimpleVideoEncoder, allowing you to specify additional options.
 pub struct SimpleVideoEncoderBuilder {
     filename: PathBuf,
     width: i32,
     height: i32,
     framerate: i32,
 
-    crf: Option<i64>,
-    bitrate: Option<i64>,
-    gop_size: Option<i32>,
-    preset: Option<X264Preset>,
+    settings: OptionalSettings,
 }
 impl SimpleVideoEncoderBuilder {
     fn new<P: AsRef<Path>>(filename: P, width: i32, height: i32, framerate: i32) -> Self {
@@ -98,47 +109,50 @@ impl SimpleVideoEncoderBuilder {
             height,
             framerate,
 
-            crf: None,
-            bitrate: None,
-            gop_size: None,
-            preset: None,
+            settings: Default::default(),
         }
     }
 
-    /// Sets the CRF, the constant-rate function. See https://trac.ffmpeg.org/wiki/Encode/H.264 for more details.
-    ///
-    /// The range of values is 0-51; lower values produce higher-quality output at the expense of higher filesize.
-    /// Values around 17-18 should be visually lossless.
-    ///
+    /// Sets the CRF, the constant-rate function. See <https://trac.ffmpeg.org/wiki/Encode/H.264> for more details.
+    /// The range of values is 0-51; lower values produce higher-quality output.
+    /// Values around 17-18 should be visually lossless. 22-23 are reasonable starting points.
     /// If you specify this, the bitrate setting is ignored.
+    ///
+    /// Unspecified by default.
     pub fn crf(&mut self, crf: i64) -> &mut Self {
-        self.crf = Some(crf);
+        self.settings.crf = Some(crf);
         self
     }
 
     /// Set the preset, a collection of options that allow trading off encoding speed for output file size and vice versa.
     /// If you combine this with setting the CRF, a slower preset will improve your bitrate.
     /// If you combine this with setting the bitrate, a slower preset will achieve better quality.
-    /// See https://trac.ffmpeg.org/wiki/Encode/H.264 for more information.
+    /// See <https://trac.ffmpeg.org/wiki/Encode/H.264> for more information.
+    ///
+    /// Defaults to Medium.
     pub fn preset(&mut self, preset: X264Preset) -> &mut Self {
-        self.preset = Some(preset);
+        self.settings.preset = Some(preset);
         self
     }
 
-    /// Sets the target bitrate. It's preferred to use the CRF settings, and setting a CRF value
-    /// will mean that this setting has no effect.
-    /// Bitrate is `output filesize / duration` and is measured in bits/second. Compression will
-    /// not achieve this bitrate exactly, but will target it.
+    /// Set the target bitrate. It's preferred to use CRF, and setting a CRF value means mean that this setting has no effect.
+    /// Bitrate is `output filesize / duration` and is measured in bits/second. Compression will not achieve this bitrate
+    /// exactly, but will target it.
+    ///
+    /// Unspecified by default.
     pub fn bitrate(&mut self, bitrate: i64) -> &mut Self {
-        self.bitrate = Some(bitrate);
+        self.settings.bitrate = Some(bitrate);
         self
     }
 
-    /// Sets the group-of-pictures size, the maximum number of frames between I-frames (keyframes).
+    /// Set the group-of-pictures size, the maximum number of frames between I-frames (keyframes).
     /// Higher values will result in smaller file sizes, but most video players can only seek to I-frames,
-    /// so setting this to a large value may hurt seekability.
+    /// so setting this to a large value may hurt seekability. Consider this in combination with the
+    /// framerate.
+    ///
+    /// Defaults to 10.
     pub fn set_gop_size(&mut self, gop_size: i32) -> &mut Self {
-        self.gop_size = Some(gop_size);
+        self.settings.gop_size = Some(gop_size);
         self
     }
 
@@ -151,11 +165,10 @@ impl SimpleVideoEncoderBuilder {
             self.height,
             self.framerate,
             AVPixelFormat::AV_PIX_FMT_YUV420P,
-            self.bitrate,
-            self.gop_size,
+            &self.settings,
         )?;
 
-        output_stream.open_video(codec, self.preset, self.crf)?;
+        output_stream.open_video(codec, &self.settings)?;
         format_context.open_file()?;
         format_context.write_header()?;
 
@@ -167,7 +180,7 @@ impl SimpleVideoEncoderBuilder {
     }
 }
 
-/// A simple video encoder that can accept frames of video and will write them into a video.
+/// A simple video encoder that can accept frames of video and will write them into a video file.
 pub struct SimpleVideoEncoder {
     temp_rgb_frame: Frame,
     output_stream: OutputStream,
@@ -176,6 +189,7 @@ pub struct SimpleVideoEncoder {
 }
 impl SimpleVideoEncoder {
     /// Creates a SimpleVideoEncoder targeting the specified file name with default settings.
+    /// The container format will be detected automatically using the file extension.
     pub fn new<P: AsRef<Path>>(
         filename: P,
         width: i32,
@@ -185,7 +199,8 @@ impl SimpleVideoEncoder {
         SimpleVideoEncoderBuilder::new(filename, width, height, framerate).build()
     }
 
-    /// Produces a builder, allowing you to specify additional settings.
+    /// Produces a builder targeting the specified file name, which allows specifying additional settings.
+    /// The container format will be detected automatically using the file extension.
     pub fn builder<P: AsRef<Path>>(
         filename: P,
         width: i32,
@@ -195,7 +210,8 @@ impl SimpleVideoEncoder {
         SimpleVideoEncoderBuilder::new(filename, width, height, framerate)
     }
 
-    /// Finishes encoding the video, flushing everything to disk and tearing down the internals.
+    /// Finishes encoding the video and writes any trailer required by the container format.
+    /// (Note that mp4 has a required trailer.)
     pub fn finish(mut self) -> Result<(), Box<dyn Error>> {
         self.output_stream.finish(&self.format_context)?;
         self.format_context.write_trailer()?;
@@ -205,6 +221,8 @@ impl SimpleVideoEncoder {
     /// Appends a frame to the video, sourcing the data from a Cairo ImageSurface.
     /// Transparency is ignored - but note that Cairo uses premultiplied alpha, so you
     /// may get unexpected results if you provide an image with non-zero alpha values.
+    ///
+    /// *Only enabled with the `cairo` feature.*
     #[cfg(feature = "cairo")]
     pub fn append_frame_cairo(&mut self, data: &cairo::ImageSurface) -> Result<(), Box<dyn Error>> {
         self.temp_rgb_frame.fill_from_cairo_rgb(data)?;

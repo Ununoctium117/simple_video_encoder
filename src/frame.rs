@@ -118,16 +118,16 @@ impl Frame {
                             // line_data[x * 4 + 3], // alpha
                             line_data[x * 4 + 2],
                             line_data[x * 4 + 1],
-                            line_data[x * 4 + 0],
+                            line_data[x * 4],
                         )
                     };
 
                     let base_offset = base_offset + (3 * x);
 
                     unsafe {
-                        *(*self.frame).data[0].offset((base_offset + 0) as isize) = r;
-                        *(*self.frame).data[0].offset((base_offset + 1) as isize) = g;
-                        *(*self.frame).data[0].offset((base_offset + 2) as isize) = b;
+                        *(*self.frame).data[0].add(base_offset) = r;
+                        *(*self.frame).data[0].add(base_offset + 1) = g;
+                        *(*self.frame).data[0].add(base_offset + 2) = b;
                     }
                 }
             }

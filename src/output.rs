@@ -18,7 +18,7 @@ use ffmpeg_sys_next::{
     AV_CODEC_FLAG_GLOBAL_HEADER, EAGAIN, SWS_BICUBIC,
 };
 
-use crate::{frame::Frame, make_av_error, X264Preset};
+use crate::{frame::Frame, make_av_error, X264Preset, OptionalSettings};
 
 pub(crate) struct OutputFormatContext {
     filename: CString,
@@ -97,15 +97,14 @@ impl OutputFormatContext {
         }
     }
 
-    pub fn add_stream<'a>(
-        &'a mut self,
+    pub fn add_stream(
+        &mut self,
         codec_id: AVCodecID,
         width: i32,
         height: i32,
         framerate: i32,
         pixel_format: AVPixelFormat,
-        bit_rate: Option<i64>,
-        gop_size: Option<i32>,
+        settings: &OptionalSettings,
     ) -> Result<(OutputStream, *mut AVCodec), Box<dyn Error>> {
         let codec = unsafe { avcodec_find_encoder(codec_id) };
         if codec.is_null() {
@@ -130,10 +129,8 @@ impl OutputFormatContext {
                 height,
                 framerate,
                 codec,
-                codec_id,
                 pixel_format,
-                bit_rate,
-                gop_size,
+                settings,
             )?,
             codec,
         ))
@@ -320,10 +317,8 @@ impl OutputStream {
         height: i32,
         framerate: i32,
         codec: *mut AVCodec,
-        codec_id: AVCodecID,
         pixel_format: AVPixelFormat,
-        bit_rate: Option<i64>,
-        gop_size: Option<i32>,
+        settings: &OptionalSettings,
     ) -> Result<Self, Box<dyn Error>> {
         let stream = unsafe { avformat_new_stream(format_context.context, ptr::null_mut()) };
         if stream.is_null() {
@@ -334,8 +329,8 @@ impl OutputStream {
         }
 
         let mut encoder_context = AVCodecContextWrapper::new(codec)?;
-        encoder_context.codec_id = codec_id;
-        encoder_context.bit_rate = bit_rate.unwrap_or(800_000);
+        encoder_context.codec_id = unsafe { (*codec).id };
+        encoder_context.bit_rate = settings.bitrate.unwrap_or(800_000);
         encoder_context.width = width;
         encoder_context.height = height;
         unsafe {
@@ -343,7 +338,7 @@ impl OutputStream {
             (*stream).time_base.den = framerate;
         }
         encoder_context.time_base = unsafe { (*stream).time_base };
-        encoder_context.gop_size = gop_size.unwrap_or(10);
+        encoder_context.gop_size = settings.gop_size.unwrap_or(10);
         encoder_context.pix_fmt = pixel_format;
 
         if unsafe { (*format_context.context).flags } & AVFMT_GLOBALHEADER != 0 {
@@ -363,17 +358,16 @@ impl OutputStream {
     pub fn open_video(
         &mut self,
         codec: *const AVCodec,
-        preset: Option<X264Preset>,
-        crf: Option<i64>,
+        settings: &OptionalSettings,
     ) -> Result<(), Box<dyn Error>> {
         let mut options = ptr::null_mut();
 
-        let preset = preset.unwrap_or(X264Preset::Medium).as_bytes_with_nul();
+        let preset = settings.preset.unwrap_or(X264Preset::Medium).as_bytes_with_nul();
         unsafe {
             av_dict_set(&mut options, "preset\0".as_ptr() as *const i8, preset, 0);
         }
 
-        if let Some(crf) = crf {
+        if let Some(crf) = settings.crf {
             unsafe {
                 av_dict_set_int(&mut options, "crf\0".as_ptr() as *const i8, crf, 0);
             }
@@ -407,7 +401,7 @@ impl OutputStream {
         let frame_to_send =
             if self.encoder_context.pix_fmt as i32 != frame.pixel_format() {
                 if self.sws_context.is_none() {
-                    self.sws_context = Some(SwsContextWrapper::new(&frame, &self.temp_frame)?);
+                    self.sws_context = Some(SwsContextWrapper::new(frame, &self.temp_frame)?);
                 }
                 self.sws_context.as_ref().unwrap().scale(
                     frame,
