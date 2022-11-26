@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, ptr::NonNull};
 
 use ffmpeg_sys_next::{
     av_frame_alloc, av_frame_free, av_frame_get_buffer, av_frame_make_writable, AVFrame,
@@ -8,22 +8,21 @@ use ffmpeg_sys_next::{
 use crate::make_av_error;
 
 pub(crate) struct Frame {
-    frame: *mut AVFrame,
+    frame: NonNull<AVFrame>,
 }
 impl Frame {
     pub fn new(fmt: AVPixelFormat, width: i32, height: i32) -> Result<Self, Box<dyn Error>> {
-        let frame = unsafe { av_frame_alloc() };
-        if frame.is_null() {
+        let Some(mut frame) = NonNull::new(unsafe { av_frame_alloc() }) else {
             return Err("Error allocating AVFrame".into());
-        }
+        };
 
         unsafe {
-            (*frame).format = fmt as i32;
-            (*frame).width = width;
-            (*frame).height = height;
+            frame.as_mut().format = fmt as i32;
+            frame.as_mut().width = width;
+            frame.as_mut().height = height;
         }
 
-        let res = unsafe { av_frame_get_buffer(frame, 0) };
+        let res = unsafe { av_frame_get_buffer(frame.as_ptr(), 0) };
         if res < 0 {
             return Err(make_av_error("allocating frame buffer", res));
         }
@@ -32,19 +31,19 @@ impl Frame {
     }
 
     pub fn width(&self) -> i32 {
-        unsafe { (*self.frame).width }
+        unsafe { self.frame.as_ref().width }
     }
 
     pub fn height(&self) -> i32 {
-        unsafe { (*self.frame).height }
+        unsafe { self.frame.as_ref().height }
     }
 
     pub fn pixel_format(&self) -> i32 {
-        unsafe { (*self.frame).format }
+        unsafe { self.frame.as_ref().format }
     }
 
     pub fn ensure_writeable(&mut self) -> Result<(), Box<dyn Error>> {
-        let result = unsafe { av_frame_make_writable(self.frame) };
+        let result = unsafe { av_frame_make_writable(self.frame.as_ptr()) };
         if result < 0 {
             Err(make_av_error("making frame writeable", result))
         } else {
@@ -54,7 +53,7 @@ impl Frame {
 
     pub fn set_pts(&mut self, pts: i64) {
         unsafe {
-            (*self.frame).pts = pts;
+            self.frame.as_mut().pts = pts;
         }
     }
 
@@ -65,8 +64,8 @@ impl Frame {
     ) -> Result<(), Box<dyn Error>> {
         self.ensure_writeable()?;
 
-        let width = unsafe { (*self.frame).width } as usize;
-        let height = unsafe { (*self.frame).height } as usize;
+        let width = self.width() as usize;
+        let height = self.height() as usize;
 
         if cairo_surface.width() as usize != width || cairo_surface.height() as usize != height {
             return Err("Cairo surface does not match frame size!".into());
@@ -78,7 +77,7 @@ impl Frame {
             return Err("Only CAIRO_FORMAT_RGB24 and CAIRO_FORMAT_ARGB32 are supported".into());
         }
 
-        let frame_stride = unsafe { (*self.frame).linesize[0] } as usize;
+        let frame_stride = self.linesize()[0] as usize;
         let cairo_stride = cairo_surface.stride() as usize;
         // TODO: Is it possible for sws_scale to work with the cairo data directly?
         // That could avoid this copy.
@@ -109,9 +108,9 @@ impl Frame {
                     let base_offset = base_offset + (3 * x);
 
                     unsafe {
-                        *(*self.frame).data[0].add(base_offset) = r;
-                        *(*self.frame).data[0].add(base_offset + 1) = g;
-                        *(*self.frame).data[0].add(base_offset + 2) = b;
+                        *self.frame.as_mut().data[0].add(base_offset) = r;
+                        *self.frame.as_mut().data[0].add(base_offset + 1) = g;
+                        *self.frame.as_mut().data[0].add(base_offset + 2) = b;
                     }
                 }
             }
@@ -124,24 +123,31 @@ impl Frame {
     // as raw pointers; it is the caller's responsibility to ensure that they don't
     // outlive self.
 
-    pub unsafe fn data(&self) -> *const *const u8 {
-        unsafe { (*self.frame).data.as_ptr() as *const *const u8 }
+    pub fn data(&self) -> &[*const u8] {
+        unsafe {
+            std::slice::from_raw_parts(
+                self.frame.as_ref().data.as_ptr() as *const *const u8,
+                self.frame.as_ref().data.len(),
+            )
+        }
     }
 
-    pub unsafe fn data_mut(&mut self) -> *const *mut u8 {
-        unsafe { (*self.frame).data.as_ptr() }
+    pub fn data_mut(&mut self) -> &[*mut u8] {
+        unsafe { self.frame.as_mut().data.as_slice() }
     }
 
-    pub unsafe fn linesize(&self) -> *const i32 {
-        unsafe { (*self.frame).linesize.as_ptr() }
+    pub fn linesize(&self) -> &[i32] {
+        unsafe { self.frame.as_ref().linesize.as_slice() }
     }
 
     pub unsafe fn as_raw(&self) -> *const AVFrame {
-        self.frame
+        self.frame.as_ptr()
     }
 }
 impl Drop for Frame {
     fn drop(&mut self) {
-        unsafe { av_frame_free(&mut self.frame) };
+        let frame_ptr = std::mem::replace(&mut self.frame, NonNull::dangling());
+        let mut raw_frame_ptr = frame_ptr.as_ptr();
+        unsafe { av_frame_free(&mut raw_frame_ptr) };
     }
 }
