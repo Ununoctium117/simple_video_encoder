@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use ffmpeg_sys_next::{av_make_error_string, AVCodecID, AVPixelFormat, AV_ERROR_MAX_STRING_SIZE};
+use ffmpeg_sys_next::{av_make_error_string, AVCodecID, AVPixelFormat, AV_ERROR_MAX_STRING_SIZE, av_log_set_level, AV_LOG_QUIET};
 
 use crate::{
     frame::Frame,
@@ -103,6 +103,11 @@ pub struct SimpleVideoEncoderBuilder {
 }
 impl SimpleVideoEncoderBuilder {
     fn new<P: AsRef<Path>>(filename: P, width: i32, height: i32, framerate: i32) -> Self {
+        // Disable libav logging to avoid spamming stderr unexpectedly
+        unsafe {
+            av_log_set_level(AV_LOG_QUIET);
+        }
+
         Self {
             filename: filename.as_ref().to_path_buf(),
             width,
@@ -119,7 +124,7 @@ impl SimpleVideoEncoderBuilder {
     /// If you specify this, the bitrate setting is ignored.
     ///
     /// Unspecified by default.
-    pub fn crf(&mut self, crf: i64) -> &mut Self {
+    pub fn crf(mut self, crf: i64) -> Self {
         self.settings.crf = Some(crf);
         self
     }
@@ -130,7 +135,7 @@ impl SimpleVideoEncoderBuilder {
     /// See <https://trac.ffmpeg.org/wiki/Encode/H.264> for more information.
     ///
     /// Defaults to Medium.
-    pub fn preset(&mut self, preset: X264Preset) -> &mut Self {
+    pub fn preset(mut self, preset: X264Preset) -> Self {
         self.settings.preset = Some(preset);
         self
     }
@@ -140,7 +145,7 @@ impl SimpleVideoEncoderBuilder {
     /// exactly, but will target it.
     ///
     /// Unspecified by default.
-    pub fn bitrate(&mut self, bitrate: i64) -> &mut Self {
+    pub fn bitrate(mut self, bitrate: i64) -> Self {
         self.settings.bitrate = Some(bitrate);
         self
     }
@@ -151,7 +156,7 @@ impl SimpleVideoEncoderBuilder {
     /// framerate.
     ///
     /// Defaults to 10.
-    pub fn set_gop_size(&mut self, gop_size: i32) -> &mut Self {
+    pub fn set_gop_size(mut self, gop_size: i32) -> Self {
         self.settings.gop_size = Some(gop_size);
         self
     }

@@ -58,26 +58,6 @@ impl Frame {
         }
     }
 
-    // These functions are unsafe because they return references to internal data
-    // as raw pointers; it is the caller's responsibility to ensure that they don't
-    // outlive self.
-
-    pub unsafe fn data(&self) -> *const *const u8 {
-        unsafe { (*self.frame).data.as_ptr() as *const *const u8 }
-    }
-
-    pub unsafe fn data_mut(&mut self) -> *const *mut u8 {
-        unsafe { (*self.frame).data.as_ptr() }
-    }
-
-    pub unsafe fn linesize(&self) -> *const i32 {
-        unsafe { (*self.frame).linesize.as_ptr() }
-    }
-
-    pub unsafe fn as_raw(&self) -> *const AVFrame {
-        self.frame
-    }
-
     #[cfg(feature = "cairo")]
     pub fn fill_from_cairo_rgb(
         &mut self,
@@ -92,12 +72,16 @@ impl Frame {
             return Err("Cairo surface does not match frame size!".into());
         }
 
-        if cairo_surface.format() != cairo::Format::Rgb24 && cairo_surface.format() != cairo::Format::ARgb32 {
+        if cairo_surface.format() != cairo::Format::Rgb24
+            && cairo_surface.format() != cairo::Format::ARgb32
+        {
             return Err("Only CAIRO_FORMAT_RGB24 and CAIRO_FORMAT_ARGB32 are supported".into());
         }
 
         let frame_stride = unsafe { (*self.frame).linesize[0] } as usize;
         let cairo_stride = cairo_surface.stride() as usize;
+        // TODO: Is it possible for sws_scale to work with the cairo data directly?
+        // That could avoid this copy.
         cairo_surface.with_data(|cairo_data| {
             for y in 0..height {
                 let line_data = &cairo_data[y * cairo_stride..];
@@ -134,6 +118,26 @@ impl Frame {
         })?;
 
         Ok(())
+    }
+
+    // These functions are unsafe because they return references to internal data
+    // as raw pointers; it is the caller's responsibility to ensure that they don't
+    // outlive self.
+
+    pub unsafe fn data(&self) -> *const *const u8 {
+        unsafe { (*self.frame).data.as_ptr() as *const *const u8 }
+    }
+
+    pub unsafe fn data_mut(&mut self) -> *const *mut u8 {
+        unsafe { (*self.frame).data.as_ptr() }
+    }
+
+    pub unsafe fn linesize(&self) -> *const i32 {
+        unsafe { (*self.frame).linesize.as_ptr() }
+    }
+
+    pub unsafe fn as_raw(&self) -> *const AVFrame {
+        self.frame
     }
 }
 impl Drop for Frame {
