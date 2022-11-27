@@ -245,9 +245,8 @@ impl SimpleVideoEncoder {
         Ok(())
     }
 
-    /// Appends a frame to the video, sourcing the data from a DynamicImage.
-    /// Transparency is ignored, and the image is converted to Rgb8 before being
-    /// encoded.
+    /// Appends a frame to the video, sourcing the data from an RgbImage. If you have a different
+    /// type of image, it can be converted by using the `image` crate's `DynamicImage`.
     ///
     /// *Only enabled with the `image-input` feature.*
     #[cfg(feature = "image-input")]
