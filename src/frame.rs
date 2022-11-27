@@ -57,7 +57,7 @@ impl Frame {
         }
     }
 
-    #[cfg(feature = "cairo")]
+    #[cfg(feature = "cairo-input")]
     pub fn fill_from_cairo_rgb(
         &mut self,
         cairo_surface: &cairo::ImageSurface,
@@ -115,6 +115,38 @@ impl Frame {
                 }
             }
         })?;
+
+        Ok(())
+    }
+
+    #[cfg(feature = "image-input")]
+    pub fn fill_from_image_rgb(
+        &mut self,
+        image: &image::RgbImage,
+    ) -> Result<(), Box<dyn Error>> {
+        self.ensure_writeable()?;
+
+        let width = self.width() as usize;
+        let height = self.height() as usize;
+
+        if image.width() as usize != width || image.height() as usize != height {
+            return Err("RgbImage image does not match frame size!".into());
+        }
+
+        let frame_stride = self.linesize()[0] as usize;
+
+        for (y, row) in image.rows().enumerate() {
+            let base_offset = y * frame_stride;
+            for (x, pixel) in row.enumerate() {
+                let base_offset = base_offset + (3 * x);
+
+                unsafe {
+                    *self.frame.as_mut().data[0].add(base_offset) = pixel[0];
+                    *self.frame.as_mut().data[0].add(base_offset + 1) = pixel[1];
+                    *self.frame.as_mut().data[0].add(base_offset + 2) = pixel[2];
+                }
+            }
+        }
 
         Ok(())
     }

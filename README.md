@@ -13,13 +13,12 @@ On Windows, this means you must set an environment variable named `FFMPEG_DIR` w
 
 ## Input
 
-Currently supported image input formats are:
+All input formats are behind feature gates. Currently supported image input formats are:
 
-* Cairo surfaces from [`cairo-rs`](https://crates.io/crates/cairo-rs) using the Rgb24 or ARgb24 formats.
-
-Planned future support includes:
-
-* Images from the ubiquitous [`image`](https://crates.io/crates/image) crate.
+|Feature Name|Input type|Enabled by default|
+|----|----|----|
+|`cairo-input`|Cairo surfaces from [`cairo-rs`](https://crates.io/crates/cairo-rs) using the Rgb24 or ARgb24 formats.|Yes|
+|`image-input`|Images from the ubiquitous [`image`](https://crates.io/crates/image) crate.|Yes|
 
 ## Output
 

@@ -5,7 +5,7 @@ use simple_video_encoder::SimpleVideoEncoder;
 
 fn main() {
     let mut encoder =
-        SimpleVideoEncoder::new("test.mp4", 256, 256, 30).expect("Failed to create encoder");
+        SimpleVideoEncoder::new("test_cairo.mp4", 256, 256, 30).expect("Failed to create encoder");
 
     // Generate 100 frames of video
     for i in 0..100 {

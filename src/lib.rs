@@ -12,7 +12,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use ffmpeg_sys_next::{av_make_error_string, AVCodecID, AVPixelFormat, AV_ERROR_MAX_STRING_SIZE, av_log_set_level, AV_LOG_QUIET};
+use ffmpeg_sys_next::{
+    av_log_set_level, av_make_error_string, AVCodecID, AVPixelFormat, AV_ERROR_MAX_STRING_SIZE,
+    AV_LOG_QUIET,
+};
 
 use crate::{
     frame::Frame,
@@ -21,6 +24,12 @@ use crate::{
 
 mod frame;
 mod output;
+
+#[cfg(feature = "cairo-input")]
+pub use cairo;
+
+#[cfg(feature = "image-input")]
+pub use image;
 
 fn make_av_error(action: impl Into<String>, err: i32) -> Box<dyn Error> {
     let mut buffer = [0u8; AV_ERROR_MAX_STRING_SIZE];
@@ -227,10 +236,23 @@ impl SimpleVideoEncoder {
     /// Transparency is ignored - but note that Cairo uses premultiplied alpha, so you
     /// may get unexpected results if you provide an image with non-zero alpha values.
     ///
-    /// *Only enabled with the `cairo` feature.*
-    #[cfg(feature = "cairo")]
+    /// *Only enabled with the `cairo-input` feature.*
+    #[cfg(feature = "cairo-input")]
     pub fn append_frame_cairo(&mut self, data: &cairo::ImageSurface) -> Result<(), Box<dyn Error>> {
         self.temp_rgb_frame.fill_from_cairo_rgb(data)?;
+        self.output_stream
+            .write_frame(&mut self.temp_rgb_frame, &self.format_context)?;
+        Ok(())
+    }
+
+    /// Appends a frame to the video, sourcing the data from a DynamicImage.
+    /// Transparency is ignored, and the image is converted to Rgb8 before being
+    /// encoded.
+    ///
+    /// *Only enabled with the `image-input` feature.*
+    #[cfg(feature = "image-input")]
+    pub fn append_frame_rgb_image(&mut self, data: &image::RgbImage) -> Result<(), Box<dyn Error>> {
+        self.temp_rgb_frame.fill_from_image_rgb(data)?;
         self.output_stream
             .write_frame(&mut self.temp_rgb_frame, &self.format_context)?;
         Ok(())
