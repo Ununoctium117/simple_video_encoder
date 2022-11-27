@@ -17,6 +17,14 @@ ffmpeg-sys-next = "5.1.1"
 
 
 [features]
-default = ["cairo-input", "image-input"]
+default = ["image-input"]
 cairo-input = ["cairo-rs"]
 image-input = ["image"]
+
+[[example]]
+name = "cairo"
+required-features = ["cairo-input"]
+
+[[example]]
+name = "image"
+required-features = ["image-input"]

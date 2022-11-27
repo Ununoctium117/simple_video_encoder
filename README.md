@@ -17,7 +17,7 @@ All input formats are behind feature gates. Currently supported image input form
 
 |Feature Name|Input type|Enabled by default|
 |----|----|----|
-|`cairo-input`|Cairo surfaces from [`cairo-rs`](https://crates.io/crates/cairo-rs) using the Rgb24 or ARgb24 formats.|Yes|
+|`cairo-input`|Cairo surfaces from [`cairo-rs`](https://crates.io/crates/cairo-rs) using the Rgb24 or ARgb24 formats.|No|
 |`image-input`|Images from the ubiquitous [`image`](https://crates.io/crates/image) crate.|Yes|
 
 ## Output
