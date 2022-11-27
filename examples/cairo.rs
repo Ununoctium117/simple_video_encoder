@@ -1,6 +1,6 @@
 //! An example showing how to use simple_video_encoder to encode frames generated with cairo-rs.
 
-use cairo::{Format, ImageSurface, Context};
+use cairo::{Context, Format, ImageSurface};
 use simple_video_encoder::SimpleVideoEncoder;
 
 fn main() {
@@ -16,7 +16,11 @@ fn main() {
         context.scale(1.0, 1.0);
 
         // Draw a circle whose color and position changes over time
-        context.set_source_rgb(1.0 * (i as f64 / 100.0), 1.0 * (100.0 - (i as f64) / 100.0), 0.2);
+        context.set_source_rgb(
+            1.0 * (i as f64 / 100.0),
+            1.0 * (100.0 - (i as f64) / 100.0),
+            0.2,
+        );
         context.arc(100.0 + i as f64, 100.0, 25.0, 0.0, std::f64::consts::TAU);
         context.fill().unwrap();
 

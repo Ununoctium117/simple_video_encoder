@@ -237,7 +237,8 @@ impl SimpleVideoEncoder {
     /// Adds the data in the frame as the video's next frame. This may mutate the frame.
     /// After calling this, you may freely reuse the frame buffer.
     pub fn append_frame(&mut self, frame: &mut Frame) -> Result<(), Box<dyn Error>> {
-        self.output_stream.write_frame(frame, &self.format_context)?;
+        self.output_stream
+            .write_frame(frame, &self.format_context)?;
         Ok(())
     }
 
