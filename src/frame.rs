@@ -119,10 +119,6 @@ impl Frame {
         Ok(())
     }
 
-    // These functions are unsafe because they return references to internal data
-    // as raw pointers; it is the caller's responsibility to ensure that they don't
-    // outlive self.
-
     pub fn data(&self) -> &[*const u8] {
         unsafe {
             std::slice::from_raw_parts(
@@ -140,6 +136,7 @@ impl Frame {
         unsafe { self.frame.as_ref().linesize.as_slice() }
     }
 
+    /// Safety: The returned pointer must not outlive this object.
     pub unsafe fn as_raw(&self) -> *const AVFrame {
         self.frame.as_ptr()
     }
