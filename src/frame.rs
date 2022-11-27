@@ -7,56 +7,27 @@ use ffmpeg_sys_next::{
 
 use crate::make_av_error;
 
-pub(crate) struct Frame {
+/// A buffer used to store a frame to be encoded into the video.
+pub struct Frame {
     frame: NonNull<AVFrame>,
 }
 impl Frame {
-    pub fn new(fmt: AVPixelFormat, width: i32, height: i32) -> Result<Self, Box<dyn Error>> {
-        let Some(mut frame) = NonNull::new(unsafe { av_frame_alloc() }) else {
-            return Err("Error allocating AVFrame".into());
-        };
-
-        unsafe {
-            frame.as_mut().format = fmt as i32;
-            frame.as_mut().width = width;
-            frame.as_mut().height = height;
-        }
-
-        let res = unsafe { av_frame_get_buffer(frame.as_ptr(), 0) };
-        if res < 0 {
-            return Err(make_av_error("allocating frame buffer", res));
-        }
-
-        Ok(Self { frame })
-    }
-
+    /// The width of the frame in pixels.
     pub fn width(&self) -> i32 {
         unsafe { self.frame.as_ref().width }
     }
 
+    /// The height of the frame in pixels.
     pub fn height(&self) -> i32 {
         unsafe { self.frame.as_ref().height }
     }
 
-    pub fn pixel_format(&self) -> i32 {
-        unsafe { self.frame.as_ref().format }
-    }
-
-    pub fn ensure_writeable(&mut self) -> Result<(), Box<dyn Error>> {
-        let result = unsafe { av_frame_make_writable(self.frame.as_ptr()) };
-        if result < 0 {
-            Err(make_av_error("making frame writeable", result))
-        } else {
-            Ok(())
-        }
-    }
-
-    pub fn set_pts(&mut self, pts: i64) {
-        unsafe {
-            self.frame.as_mut().pts = pts;
-        }
-    }
-
+    /// Fills the frame using data from a Cairo ImageSurface.
+    ///
+    /// Transparency is ignored - but note that Cairo uses premultiplied alpha, so you
+    /// may get unexpected results if you provide an image with non-zero alpha values.
+    ///
+    /// *Only enabled with the `cairo-input` feature.*
     #[cfg(feature = "cairo-input")]
     pub fn fill_from_cairo_rgb(
         &mut self,
@@ -119,11 +90,13 @@ impl Frame {
         Ok(())
     }
 
+    /// Populates this frame with an image using an RgbImage from the `image` crate.
+    ///
+    /// If you have a different type of image, it can be converted by using `DynamicImage`.
+    ///
+    /// *Only enabled with the `image-input` feature.*
     #[cfg(feature = "image-input")]
-    pub fn fill_from_image_rgb(
-        &mut self,
-        image: &image::RgbImage,
-    ) -> Result<(), Box<dyn Error>> {
+    pub fn fill_from_image_rgb(&mut self, image: &image::RgbImage) -> Result<(), Box<dyn Error>> {
         self.ensure_writeable()?;
 
         let width = self.width() as usize;
@@ -135,10 +108,10 @@ impl Frame {
 
         let frame_stride = self.linesize()[0] as usize;
 
-        for (y, row) in image.rows().enumerate() {
-            let base_offset = y * frame_stride;
-            for (x, pixel) in row.enumerate() {
-                let base_offset = base_offset + (3 * x);
+        for (y, row) in image.enumerate_rows() {
+            let base_offset = y as usize * frame_stride;
+            for (x, _, pixel) in row {
+                let base_offset = base_offset + (3 * x as usize);
 
                 unsafe {
                     *self.frame.as_mut().data[0].add(base_offset) = pixel[0];
@@ -150,8 +123,47 @@ impl Frame {
 
         Ok(())
     }
+}
+impl Frame {
+    pub(crate) fn new(fmt: AVPixelFormat, width: i32, height: i32) -> Result<Self, Box<dyn Error>> {
+        let Some(mut frame) = NonNull::new(unsafe { av_frame_alloc() }) else {
+            return Err("Error allocating AVFrame".into());
+        };
 
-    pub fn data(&self) -> &[*const u8] {
+        unsafe {
+            frame.as_mut().format = fmt as i32;
+            frame.as_mut().width = width;
+            frame.as_mut().height = height;
+        }
+
+        let res = unsafe { av_frame_get_buffer(frame.as_ptr(), 0) };
+        if res < 0 {
+            return Err(make_av_error("allocating frame buffer", res));
+        }
+
+        Ok(Self { frame })
+    }
+
+    pub(crate) fn pixel_format(&self) -> i32 {
+        unsafe { self.frame.as_ref().format }
+    }
+
+    pub(crate) fn ensure_writeable(&mut self) -> Result<(), Box<dyn Error>> {
+        let result = unsafe { av_frame_make_writable(self.frame.as_ptr()) };
+        if result < 0 {
+            Err(make_av_error("making frame writeable", result))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn set_pts(&mut self, pts: i64) {
+        unsafe {
+            self.frame.as_mut().pts = pts;
+        }
+    }
+
+    pub(crate) fn data(&self) -> &[*const u8] {
         unsafe {
             std::slice::from_raw_parts(
                 self.frame.as_ref().data.as_ptr() as *const *const u8,
@@ -160,16 +172,16 @@ impl Frame {
         }
     }
 
-    pub fn data_mut(&mut self) -> &[*mut u8] {
+    pub(crate) fn data_mut(&mut self) -> &[*mut u8] {
         unsafe { self.frame.as_mut().data.as_slice() }
     }
 
-    pub fn linesize(&self) -> &[i32] {
+    pub(crate) fn linesize(&self) -> &[i32] {
         unsafe { self.frame.as_ref().linesize.as_slice() }
     }
 
     /// Safety: The returned pointer must not outlive this object.
-    pub unsafe fn as_raw(&self) -> *const AVFrame {
+    pub(crate) unsafe fn as_raw(&self) -> *const AVFrame {
         self.frame.as_ptr()
     }
 }

@@ -17,10 +17,7 @@ use ffmpeg_sys_next::{
     AV_LOG_QUIET,
 };
 
-use crate::{
-    frame::Frame,
-    output::{OutputFormatContext, OutputStream},
-};
+use crate::output::{OutputFormatContext, OutputStream};
 
 mod frame;
 mod output;
@@ -30,6 +27,8 @@ pub use cairo;
 
 #[cfg(feature = "image-input")]
 pub use image;
+
+pub use crate::frame::Frame;
 
 fn make_av_error(action: impl Into<String>, err: i32) -> Box<dyn Error> {
     let mut buffer = [0u8; AV_ERROR_MAX_STRING_SIZE];
@@ -187,7 +186,8 @@ impl SimpleVideoEncoderBuilder {
         format_context.write_header()?;
 
         Ok(SimpleVideoEncoder {
-            temp_rgb_frame: Frame::new(AVPixelFormat::AV_PIX_FMT_RGB24, self.width, self.height)?,
+            width: self.width,
+            height: self.height,
             output_stream,
             format_context,
         })
@@ -196,7 +196,9 @@ impl SimpleVideoEncoderBuilder {
 
 /// A simple video encoder that can accept frames of video and will write them into a video file.
 pub struct SimpleVideoEncoder {
-    temp_rgb_frame: Frame,
+    width: i32,
+    height: i32,
+
     output_stream: OutputStream,
     // Ensure that this is dropped last, since the OutputStream must not outlive it
     format_context: OutputFormatContext,
@@ -232,28 +234,16 @@ impl SimpleVideoEncoder {
         Ok(())
     }
 
-    /// Appends a frame to the video, sourcing the data from a Cairo ImageSurface.
-    /// Transparency is ignored - but note that Cairo uses premultiplied alpha, so you
-    /// may get unexpected results if you provide an image with non-zero alpha values.
-    ///
-    /// *Only enabled with the `cairo-input` feature.*
-    #[cfg(feature = "cairo-input")]
-    pub fn append_frame_cairo(&mut self, data: &cairo::ImageSurface) -> Result<(), Box<dyn Error>> {
-        self.temp_rgb_frame.fill_from_cairo_rgb(data)?;
-        self.output_stream
-            .write_frame(&mut self.temp_rgb_frame, &self.format_context)?;
+    /// Adds the data in the frame as the video's next frame. This may mutate the frame.
+    /// After calling this, you may freely reuse the frame buffer.
+    pub fn append_frame(&mut self, frame: &mut Frame) -> Result<(), Box<dyn Error>> {
+        self.output_stream.write_frame(frame, &self.format_context)?;
         Ok(())
     }
 
-    /// Appends a frame to the video, sourcing the data from an RgbImage. If you have a different
-    /// type of image, it can be converted by using the `image` crate's `DynamicImage`.
-    ///
-    /// *Only enabled with the `image-input` feature.*
-    #[cfg(feature = "image-input")]
-    pub fn append_frame_rgb_image(&mut self, data: &image::RgbImage) -> Result<(), Box<dyn Error>> {
-        self.temp_rgb_frame.fill_from_image_rgb(data)?;
-        self.output_stream
-            .write_frame(&mut self.temp_rgb_frame, &self.format_context)?;
-        Ok(())
+    /// Creates a new frame buffer which can be filled with your data and then given to
+    /// [`Self::append_frame`].
+    pub fn new_frame(&self) -> Result<Frame, Box<dyn Error>> {
+        Frame::new(AVPixelFormat::AV_PIX_FMT_RGB24, self.width, self.height)
     }
 }
