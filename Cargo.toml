@@ -2,6 +2,10 @@
 name = "simple_video_encoder"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "A simple video encoding library built on top of ffmpeg"
+repository = "https://github.com/Ununoctium117/simple_video_encoder"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
