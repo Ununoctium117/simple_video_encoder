@@ -17,7 +17,7 @@ use ffmpeg_sys_next::{
     AV_LOG_QUIET,
 };
 
-use crate::output::{OutputFormatContext, OutputStream};
+use crate::output::OutputStream;
 
 mod frame;
 mod output;
@@ -171,8 +171,8 @@ impl SimpleVideoEncoderBuilder {
 
     /// Produce a SimpleVideoEncoder using the specified settings.
     pub fn build(self) -> Result<SimpleVideoEncoder, Box<dyn Error>> {
-        let mut format_context = OutputFormatContext::new(&self.filename)?;
-        let (mut output_stream, codec) = format_context.add_stream(
+        let mut format_context = OutputStream::new(
+            &self.filename,
             AVCodecID::AV_CODEC_ID_H264,
             self.width,
             self.height,
@@ -181,14 +181,11 @@ impl SimpleVideoEncoderBuilder {
             &self.settings,
         )?;
 
-        output_stream.open_video(codec, &self.settings)?;
-        format_context.open_file()?;
-        format_context.write_header()?;
+        format_context.open(&self.settings)?;
 
         Ok(SimpleVideoEncoder {
             width: self.width,
             height: self.height,
-            output_stream,
             format_context,
         })
     }
@@ -199,9 +196,7 @@ pub struct SimpleVideoEncoder {
     width: i32,
     height: i32,
 
-    output_stream: OutputStream,
-    // Ensure that this is dropped last, since the OutputStream must not outlive it
-    format_context: OutputFormatContext,
+    format_context: OutputStream,
 }
 impl SimpleVideoEncoder {
     /// Creates a SimpleVideoEncoder targeting the specified file name with default settings.
@@ -229,17 +224,13 @@ impl SimpleVideoEncoder {
     /// Finishes encoding the video and writes any trailer required by the container format.
     /// (Note that mp4 has a required trailer.)
     pub fn finish(mut self) -> Result<(), Box<dyn Error>> {
-        self.output_stream.finish(&self.format_context)?;
-        self.format_context.write_trailer()?;
-        Ok(())
+        self.format_context.finish()
     }
 
     /// Adds the data in the frame as the video's next frame. This may mutate the frame.
     /// After calling this, you may freely reuse the frame buffer.
     pub fn append_frame(&mut self, frame: &mut Frame) -> Result<(), Box<dyn Error>> {
-        self.output_stream
-            .write_frame(frame, &self.format_context)?;
-        Ok(())
+        self.format_context.write_frame(frame)
     }
 
     /// Creates a new frame buffer which can be filled with your data and then given to
